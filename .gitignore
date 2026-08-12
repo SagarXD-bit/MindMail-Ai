@@ -1,0 +1,27 @@
+# Backend
+backend/venv/
+backend/__pycache__/
+backend/**/__pycache__/
+backend/*.pyc
+backend/.pytest_cache/
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+
+# Env files (managed by backend)
+*.env
+backend/.env
+frontend/.env
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Drytis internal
+.drytis/notes/legacy/
+.playwright-mcp/

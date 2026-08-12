@@ -1,0 +1,13 @@
+{
+  "preview_url": "https://mailmind-ai-pyy2he.drytis.dev/",
+  "accounts": [
+    {
+      "role": "user",
+      "email": "not-required",
+      "password": "not-required",
+      "verified_at": "2026-08-12T18:10:00Z",
+      "verified_by": "leader",
+      "notes": "No authentication required — single-tenant demo app. All pages accessible without login."
+    }
+  ]
+}
