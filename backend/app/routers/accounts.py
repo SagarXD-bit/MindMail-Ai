@@ -111,12 +111,26 @@ def test_account(account_id: int, db: Session = Depends(get_db)):
 
 @router.post("/sync", response_model=dict)
 def sync_emails(force_demo: bool = False, db: Session = Depends(get_db)):
-    """Fetch new emails from IMAP or seed demo data."""
-    from sqlalchemy import text as sql_text
+    """Fetch new emails from IMAP or seed demo data.
+
+    Decision logic:
+    - force_demo=True → always demo mode.
+    - No account → demo mode.
+    - Account exists but status != "connected" → demo mode (don't attempt
+      IMAP on an account that has never validated — avoids raw errors).
+    - Account exists and status == "connected" → real IMAP sync.
+    """
     user = get_or_create_user(db)
     account = db.query(EmailAccount).filter(EmailAccount.user_id == user.id).first()
 
-    if account and not force_demo:
+    # Only attempt real IMAP when the user has explicitly connected an account
+    should_try_imap = (
+        account
+        and not force_demo
+        and account.status == "connected"
+    )
+
+    if should_try_imap:
         # Real IMAP sync
         password = decrypt_password(account.encrypted_password)
         result = fetch_emails(
@@ -124,9 +138,14 @@ def sync_emails(force_demo: bool = False, db: Session = Depends(get_db)):
             account.email_address, password, account.imap_ssl, limit=20
         )
         if not result.success:
-            # Fall back to demo if IMAP fails
-            return _seed_demo_emails(db, user, account,
-                                     error_msg=result.message)
+            # IMAP connection failed — mark account and return demo mode
+            # with a *user-friendly* message (no raw error string).
+            account.status = "error"
+            db.commit()
+            return _seed_demo_emails(
+                db, user, account,
+                note="Your email account connection failed. Please check your IMAP settings in the Settings page.",
+            )
         new_count = _process_fetched_emails(db, user, account, result.emails)
         account.status = "connected"
         account.last_sync_at = datetime.utcnow()
@@ -140,6 +159,14 @@ def sync_emails(force_demo: bool = False, db: Session = Depends(get_db)):
         }
 
     # Demo mode
+    if account and account.status != "connected" and not force_demo:
+        # Account exists but isn't validated — let the user know without
+        # dumping a raw connection error.
+        return _seed_demo_emails(
+            db, user, account,
+            note="Demo mode is active. To sync real emails, connect and validate a working IMAP account in Settings.",
+        )
+
     return _seed_demo_emails(db, user, account)
 
 
@@ -197,8 +224,13 @@ def _process_fetched_emails(db: Session, user: User, account: EmailAccount,
 
 
 def _seed_demo_emails(db: Session, user: User, account=None,
-                      error_msg: str = None) -> dict:
-    """Seed demo emails if none exist yet."""
+                      note: str = None) -> dict:
+    """Seed demo emails if none exist yet.
+
+    ``note`` is an optional user-friendly message appended to the response
+    (e.g. "Demo mode is active. Connect an IMAP account to sync real emails.").
+    It must NEVER contain raw IMAP error strings.
+    """
     from ..models import AIClassification
     demo_data = get_demo_emails()
 
@@ -206,12 +238,15 @@ def _seed_demo_emails(db: Session, user: User, account=None,
     existing_demo = db.query(Email).filter(Email.is_demo == True).count()
     if existing_demo > 0:
         total = db.query(Email).count()
+        message = f"Demo data already loaded ({total} emails). "
+        message += "Use refresh to re-sync."
+        if note:
+            message += f" {note}"
         return {
             "status": "ok",
             "new_emails": 0,
             "total_emails": total,
-            "message": f"Demo data already loaded ({total} emails). Use refresh to re-sync." +
-                       (f" IMAP error: {error_msg}" if error_msg else ""),
+            "message": message,
             "mode": "demo",
         }
 
@@ -248,11 +283,13 @@ def _seed_demo_emails(db: Session, user: User, account=None,
 
     db.commit()
     total = db.query(Email).count()
+    message = f"Loaded {new_count} demo emails. AI categorization applied."
+    if note:
+        message += f" {note}"
     return {
         "status": "ok",
         "new_emails": new_count,
         "total_emails": total,
-        "message": f"Loaded {new_count} demo emails. AI categorization applied." +
-                   (f" (IMAP sync failed: {error_msg})" if error_msg else ""),
+        "message": message,
         "mode": "demo",
     }

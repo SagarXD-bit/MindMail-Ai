@@ -2,6 +2,7 @@
 
 import imaplib
 import email
+import socket
 from email.header import decode_header
 from datetime import datetime
 from typing import List, Optional, Tuple
@@ -113,6 +114,53 @@ class IMAPResult:
         self.count = count
 
 
+def _friendly_imap_error(e: Exception, context: str = "connect") -> str:
+    """Convert an IMAP/socket exception into a user-friendly message."""
+    err_str = str(e)
+
+    # DNS resolution failures (Name or service not known)
+    if isinstance(e, (socket.gaierror,)) or "Name or service not known" in err_str \
+            or "Temporary failure in name resolution" in err_str:
+        return (
+            "Cannot resolve the email server address. "
+            "Please check that the IMAP server hostname is correct in Settings."
+        )
+
+    # Connection refused / unreachable
+    if isinstance(e, ConnectionRefusedError) or "Connection refused" in err_str:
+        return (
+            "The email server refused the connection. "
+            "Please verify the IMAP server address and port in Settings."
+        )
+
+    # Timeout
+    if isinstance(e, TimeoutError) or "timed out" in err_str.lower():
+        return (
+            "Connection to the email server timed out. "
+            "Please check your network and the IMAP server settings."
+        )
+
+    # Authentication
+    if isinstance(e, imaplib.IMAP4.error) and "auth" in err_str.lower():
+        return (
+            "Authentication failed. Please verify your email address and "
+            "app password in Settings. (Many providers require an app-specific password.)"
+        )
+
+    # Generic IMAP4 error
+    if isinstance(e, imaplib.IMAP4.error):
+        return f"IMAP server error: {err_str}. Please check your account settings."
+
+    # Other socket / network errors
+    if isinstance(e, OSError):
+        return (
+            "Unable to reach the email server. "
+            "Please check your network connection and IMAP settings."
+        )
+
+    return f"Failed to {context}: {err_str}"
+
+
 def test_imap_connection(server: str, port: int, email_addr: str, password: str,
                          use_ssl: bool = True) -> Tuple[bool, str]:
     """Test an IMAP connection. Returns (success, message)."""
@@ -124,14 +172,8 @@ def test_imap_connection(server: str, port: int, email_addr: str, password: str,
         conn.login(email_addr, password)
         conn.logout()
         return True, "Connection successful."
-    except imaplib.IMAP4.error as e:
-        return False, f"IMAP authentication failed: {e}"
-    except TimeoutError as e:
-        return False, f"Connection timed out or unreachable: {e}"
-    except OSError as e:
-        return False, f"Connection error: {e}"
     except Exception as e:
-        return False, f"Connection failed: {e}"
+        return False, _friendly_imap_error(e, context="test connection")
 
 
 def fetch_emails(server: str, port: int, email_addr: str, password: str,
@@ -207,14 +249,8 @@ def fetch_emails(server: str, port: int, email_addr: str, password: str,
         conn.logout()
         return IMAPResult(True, f"Fetched {len(emails)} emails.", emails, len(emails))
 
-    except imaplib.IMAP4.error as e:
-        return IMAPResult(False, f"IMAP error: {e}")
-    except TimeoutError as e:
-        return IMAPResult(False, f"Connection error: {e}")
-    except OSError as e:
-        return IMAPResult(False, f"Connection error: {e}")
     except Exception as e:
-        return IMAPResult(False, f"Failed to fetch emails: {e}")
+        return IMAPResult(False, _friendly_imap_error(e, context="fetch emails"))
     finally:
         if conn:
             try:
