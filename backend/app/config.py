@@ -32,20 +32,27 @@ class Settings(BaseSettings):
     app_env: str = "development"
     cors_origins: str = "*"
 
-    @property
-    def resolved_database_url(self) -> str:
-        """Build the DATABASE_URL from component vars if it contains placeholders."""
-        url = self.database_url
-        if "{{" in url or "sqlite" in url:
-            # If the template wasn't resolved, build manually from components
-            if self.db_host and self.db_user:
-                from urllib.parse import quote_plus
-                pwd = quote_plus(self.db_password)
-                return (
-                    f"mysql+pymysql://{self.db_user}:{pwd}@"
-                    f"{self.db_host}:{self.db_port}/{self.db_name}"
-                )
-        return url
+@property
+def resolved_database_url(self) -> str:
+    """Build the MySQL DATABASE_URL using PyMySQL when needed."""
+    url = self.database_url
+
+    # Use component variables when DATABASE_URL is a template,
+    # missing, or SQLite.
+    if not url or "{{" in url or "sqlite" in url:
+        if self.db_host and self.db_user:
+            from urllib.parse import quote_plus
+            pwd = quote_plus(self.db_password)
+            return (
+                f"mysql+pymysql://{self.db_user}:{pwd}@"
+                f"{self.db_host}:{self.db_port}/{self.db_name}"
+            )
+
+    # Force SQLAlchemy to use PyMySQL instead of MySQLdb.
+    if url.startswith("mysql://"):
+        return url.replace("mysql://", "mysql+pymysql://", 1)
+
+    return url
 
 
 @lru_cache()
