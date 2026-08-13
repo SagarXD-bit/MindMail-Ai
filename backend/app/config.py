@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     cors_origins: str = "*"
 
 @property
-def resolved_database_url(self) -> str:
+ def resolved_database_url(self) -> str:
     """Build the MySQL DATABASE_URL using PyMySQL when needed."""
     url = self.database_url
 
