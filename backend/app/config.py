@@ -33,19 +33,19 @@ class Settings(BaseSettings):
     cors_origins: str = "*"
 
     @property
-def resolved_database_url(self) -> str:
-    """Build the MySQL connection URL from Render environment variables."""
-    from urllib.parse import quote_plus
+    def resolved_database_url(self) -> str:
+        """Build the MySQL connection URL from Render environment variables."""
+        from urllib.parse import quote_plus
 
-    if self.db_host and self.db_user:
-        pwd = quote_plus(self.db_password)
+        if self.db_host and self.db_user:
+            pwd = quote_plus(self.db_password)
 
-        return (
-            f"mysql+pymysql://{self.db_user}:{pwd}@"
-            f"{self.db_host}:{self.db_port}/{self.db_name}"
-        )
+            return (
+                f"mysql+pymysql://{self.db_user}:{pwd}@"
+                f"{self.db_host}:{self.db_port}/{self.db_name}"
+            )
 
-    return self.database_url
+        return self.database_url
 
 
 @lru_cache()
